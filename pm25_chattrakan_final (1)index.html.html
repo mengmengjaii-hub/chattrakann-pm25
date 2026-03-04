@@ -1,0 +1,1325 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PM 2.5 Real-Time | อำเภอชาติตระการ</title>
+<link href="https://fonts.googleapis.com/css2?family=Kanit:wght@300;400;500;600;700;800&family=Teko:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+:root {
+  --bg: #03080f;
+  --bg2: #060d18;
+  --surface: rgba(255,255,255,0.03);
+  --surface2: rgba(255,255,255,0.06);
+  --border: rgba(255,255,255,0.08);
+  --border2: rgba(255,255,255,0.12);
+  --text: #e8f0fe;
+  --muted: #4a6080;
+  --muted2: #6b88a8;
+  --accent: #00d4ff;
+  --accent-dim: rgba(0,212,255,0.1);
+
+  --c-vg: #00e5a0;
+  --c-g:  #4ade80;
+  --c-m:  #fbbf24;
+  --c-us: #f97316;
+  --c-u:  #ff4545;
+}
+
+*{margin:0;padding:0;box-sizing:border-box;}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Kanit', sans-serif;
+  font-weight: 300;
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+/* ── GRID BACKGROUND ─────── */
+body::before {
+  content:'';
+  position: fixed;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(0,212,255,0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0,212,255,0.03) 1px, transparent 1px);
+  background-size: 60px 60px;
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* ── GLOW ORBS ─────── */
+body::after {
+  content:'';
+  position: fixed;
+  top: -200px; left: -200px;
+  width: 600px; height: 600px;
+  background: radial-gradient(circle, rgba(0,212,255,0.06) 0%, transparent 70%);
+  pointer-events: none;
+  z-index: 0;
+  animation: orbMove 20s ease-in-out infinite alternate;
+}
+
+@keyframes orbMove {
+  from { transform: translate(0,0); }
+  to   { transform: translate(300px, 200px); }
+}
+
+/* ── CRITICAL ALERT BANNER ─────── */
+#criticalAlert {
+  display: none;
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  z-index: 9999;
+}
+#criticalAlert.show { display: block; }
+
+#criticalAlert .alert-frame {
+  position: relative;
+  pointer-events: all;
+  background: linear-gradient(135deg, #1a0000 0%, #3d0000 40%, #200000 100%);
+  border-bottom: 3px solid #ff4545;
+  overflow: hidden;
+  animation: alertSlideIn 0.55s cubic-bezier(0.16,1,0.3,1);
+  /* pulse border glow */
+  box-shadow: 0 0 0 0 rgba(255,69,69,0.7);
+  animation: alertSlideIn 0.55s cubic-bezier(0.16,1,0.3,1), borderPulse 1.8s ease-in-out 0.55s infinite;
+}
+
+@keyframes alertSlideIn {
+  from { transform: translateY(-110%); opacity: 0; }
+  to   { transform: translateY(0);     opacity: 1; }
+}
+
+@keyframes borderPulse {
+  0%,100% { box-shadow: 0 0 12px rgba(255,69,69,0.4), 0 4px 30px rgba(255,69,69,0.3); }
+  50%      { box-shadow: 0 0 30px rgba(255,69,69,0.8), 0 4px 60px rgba(255,69,69,0.5); }
+}
+
+/* diagonal hazard stripes */
+.alert-frame::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(
+    -45deg,
+    transparent 0px,
+    transparent 14px,
+    rgba(255,69,69,0.05) 14px,
+    rgba(255,69,69,0.05) 28px
+  );
+  pointer-events: none;
+}
+
+.alert-inner {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 18px;
+  flex-wrap: wrap;
+}
+
+/* shake + pulse icon */
+.alert-pulse-icon {
+  font-size: 34px;
+  flex-shrink: 0;
+  animation: iconShake 0.4s ease infinite alternate, iconGlow 1s ease infinite alternate;
+  transform-origin: center;
+}
+
+@keyframes iconShake {
+  0%   { transform: rotate(-8deg) scale(1.05); }
+  100% { transform: rotate(8deg)  scale(0.95); }
+}
+@keyframes iconGlow {
+  from { filter: drop-shadow(0 0 4px rgba(255,80,80,0.6)); }
+  to   { filter: drop-shadow(0 0 14px rgba(255,80,80,1)); }
+}
+
+.alert-text-block { flex: 1; min-width: 180px; }
+
+.alert-title-big {
+  font-family: 'Teko', sans-serif;
+  font-size: clamp(17px, 3vw, 23px);
+  font-weight: 700;
+  letter-spacing: 1.5px;
+  color: #fff;
+  text-shadow: 0 0 16px rgba(255,100,100,0.9);
+  line-height: 1.15;
+  /* text pulse */
+  animation: textPulse 2s ease infinite;
+}
+
+@keyframes textPulse {
+  0%,100% { opacity: 1; }
+  50%      { opacity: 0.85; }
+}
+
+.alert-subtitle {
+  font-size: 12px;
+  color: #ffbbbb;
+  font-weight: 300;
+  margin-top: 3px;
+  line-height: 1.5;
+}
+
+.alert-locations {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 7px;
+}
+
+.alert-loc-tag {
+  background: rgba(255,69,69,0.22);
+  border: 1px solid rgba(255,100,100,0.5);
+  border-radius: 5px;
+  padding: 3px 10px;
+  font-size: 12px;
+  color: #ffaaaa;
+  font-weight: 500;
+}
+
+/* close button — large tap target */
+.alert-close-btn {
+  background: rgba(255,255,255,0.08);
+  border: 1px solid rgba(255,255,255,0.25);
+  border-radius: 8px;
+  padding: 8px 18px;
+  color: #fff;
+  font-family: 'Kanit', sans-serif;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 0.2s, transform 0.15s;
+  min-height: 40px;
+  letter-spacing: 0.5px;
+}
+.alert-close-btn:hover { background: rgba(255,255,255,0.2); transform: scale(1.04); }
+.alert-close-btn:active { transform: scale(0.97); }
+
+/* ── AQI STATUS BAR ─────── */
+#aqiBar {
+  position: relative;
+  z-index: 10;
+  display: none;
+  align-items: stretch;
+  min-height: 46px;
+  overflow: hidden;
+  border-bottom: 1px solid var(--border);
+  animation: barSlide 0.4s ease;
+}
+#aqiBar.show { display: flex; }
+
+@keyframes barSlide {
+  from { opacity:0; transform:translateY(-10px); }
+  to   { opacity:1; transform:translateY(0); }
+}
+
+.aqi-bar-stripe {
+  width: 7px;
+  flex-shrink: 0;
+}
+
+.aqi-bar-content {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 20px;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.aqi-bar-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.aqi-bar-dot {
+  width: 10px; height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  animation: dotBlink 1.4s ease infinite;
+}
+@keyframes dotBlink {
+  0%,100% { opacity:1; transform:scale(1); }
+  50% { opacity:0.4; transform:scale(1.4); }
+}
+
+.aqi-bar-level {
+  font-family: 'Teko', sans-serif;
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: 1px;
+}
+
+.aqi-bar-msg {
+  font-size: 13px;
+  font-weight: 300;
+  opacity: 0.85;
+}
+
+.aqi-bar-avg {
+  font-family: 'Teko', sans-serif;
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  opacity: 0.9;
+  flex-shrink: 0;
+}
+
+.topbar {
+  position: relative;
+  z-index: 10;
+  background: rgba(0,0,0,0.6);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid var(--border);
+  padding: 8px 24px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 12px;
+  color: var(--muted2);
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.topbar strong { color: var(--accent); font-weight: 500; }
+
+/* ── HEADER ─────── */
+header {
+  position: relative;
+  z-index: 10;
+  padding: 28px 24px 24px;
+  border-bottom: 1px solid var(--border);
+  background: linear-gradient(180deg, rgba(0,212,255,0.04) 0%, transparent 100%);
+}
+
+.header-inner {
+  max-width: 1180px;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.header-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--accent-dim);
+  border: 1px solid rgba(0,212,255,0.2);
+  border-radius: 4px;
+  padding: 3px 10px;
+  font-size: 11px;
+  color: var(--accent);
+  letter-spacing: 2px;
+  font-weight: 500;
+  margin-bottom: 8px;
+}
+
+header h1 {
+  font-family: 'Teko', sans-serif;
+  font-size: clamp(28px, 5vw, 46px);
+  font-weight: 600;
+  letter-spacing: 1px;
+  line-height: 1;
+  color: #fff;
+}
+
+header h1 span { color: #ffffff; }
+
+.header-sub {
+  font-size: 13px;
+  color: var(--muted2);
+  margin-top: 6px;
+  font-weight: 300;
+}
+
+.header-right {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.live-pill {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(0,229,160,0.1);
+  border: 1px solid rgba(0,229,160,0.25);
+  border-radius: 999px;
+  padding: 6px 16px;
+  font-size: 12px;
+  color: var(--c-vg);
+  letter-spacing: 1px;
+  font-weight: 500;
+}
+
+.live-dot {
+  width: 7px; height: 7px;
+  background: var(--c-vg);
+  border-radius: 50%;
+  box-shadow: 0 0 8px var(--c-vg);
+  animation: livePulse 1.5s ease infinite;
+}
+
+@keyframes livePulse {
+  0%,100% { opacity:1; transform:scale(1); }
+  50% { opacity:0.3; transform:scale(1.5); }
+}
+
+.updated-text { font-size: 11px; color: var(--muted); }
+
+.refresh-btn {
+  background: var(--surface2);
+  border: 1px solid var(--border2);
+  border-radius: 6px;
+  color: var(--accent);
+  padding: 7px 16px;
+  font-family: 'Kanit', sans-serif;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  letter-spacing: 0.5px;
+}
+.refresh-btn:hover { background: var(--accent-dim); border-color: rgba(0,212,255,0.3); }
+.refresh-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* ── MAIN ─────── */
+main {
+  position: relative;
+  z-index: 10;
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 28px 24px;
+}
+
+/* ── SUMMARY ─────── */
+.summary-row {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+  margin-bottom: 32px;
+}
+@media(max-width:700px){ .summary-row{ grid-template-columns:1fr 1fr; } }
+
+.s-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 18px 20px;
+  position: relative;
+  overflow: hidden;
+  transition: border-color 0.2s, transform 0.2s;
+}
+.s-card:hover { border-color: var(--border2); transform: translateY(-2px); }
+
+.s-card::after {
+  content: '';
+  position: absolute;
+  bottom: 0; left: 0; right: 0;
+  height: 2px;
+  background: var(--card-color, var(--accent));
+  opacity: 0.6;
+}
+
+.s-icon { font-size: 20px; margin-bottom: 8px; opacity: 0.7; }
+.s-label {
+  font-size: 10px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--muted2);
+  margin-bottom: 6px;
+  font-weight: 400;
+}
+.s-value {
+  font-family: 'Teko', sans-serif;
+  font-size: 42px;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--card-color, var(--accent));
+}
+.s-sub { font-size: 11px; color: var(--muted); margin-top: 4px; }
+
+/* ── SECTION HEAD ─────── */
+.section-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+  font-size: 11px;
+  letter-spacing: 2.5px;
+  text-transform: uppercase;
+  color: var(--muted2);
+  font-weight: 500;
+}
+.section-head::before {
+  content: '';
+  width: 3px; height: 16px;
+  background: var(--accent);
+  border-radius: 2px;
+}
+.section-head::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+
+/* ── TAMBON GRID ─────── */
+.tambon-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+  margin-bottom: 32px;
+}
+@media(max-width:800px){ .tambon-grid{ grid-template-columns:1fr 1fr; } }
+@media(max-width:500px){ .tambon-grid{ grid-template-columns:1fr; } }
+
+.tb-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 20px;
+  position: relative;
+  overflow: hidden;
+  transition: transform 0.2s, border-color 0.2s, box-shadow 0.2s;
+  cursor: default;
+}
+
+.tb-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 12px 40px rgba(0,0,0,0.4);
+}
+
+.tb-card-glow {
+  position: absolute;
+  top: -40px; right: -40px;
+  width: 120px; height: 120px;
+  border-radius: 50%;
+  background: var(--glow-color, rgba(0,212,255,0.08));
+  filter: blur(30px);
+  pointer-events: none;
+}
+
+.tb-top-bar {
+  height: 3px;
+  border-radius: 2px;
+  background: var(--bar-color, var(--accent));
+  position: absolute;
+  top: 0; left: 0; right: 0;
+}
+
+.tb-rank-badge {
+  position: absolute;
+  top: 12px; right: 12px;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: 4px;
+  letter-spacing: 0.5px;
+}
+
+.tb-name {
+  font-size: 13px;
+  color: var(--muted2);
+  margin-bottom: 6px;
+  font-weight: 300;
+}
+.tb-name strong { color: var(--text); font-size: 15px; font-weight: 600; }
+
+.tb-value-row {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+
+.tb-val {
+  font-family: 'Teko', sans-serif;
+  font-size: 60px;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.tb-unit {
+  font-size: 13px;
+  color: var(--muted);
+  font-weight: 300;
+  padding-bottom: 6px;
+}
+
+.tb-avg { font-size: 12px; color: var(--muted); margin-bottom: 8px; }
+
+.tb-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  border: 1px solid currentColor;
+}
+
+.tb-bar {
+  margin-top: 12px;
+  height: 3px;
+  background: var(--border);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.tb-bar-fill {
+  height: 100%;
+  border-radius: 2px;
+  transition: width 1.2s cubic-bezier(0.4,0,0.2,1);
+}
+
+/* ── STATUS BANNER ─────── */
+.status-banner {
+  border-radius: 12px;
+  padding: 16px 20px;
+  margin-bottom: 32px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  border: 1px solid;
+  backdrop-filter: blur(8px);
+  animation: fadeUp 0.5s ease;
+}
+
+@keyframes fadeUp {
+  from { opacity:0; transform:translateY(10px); }
+  to   { opacity:1; transform:translateY(0); }
+}
+
+.status-icon { font-size: 28px; flex-shrink: 0; }
+.status-title { font-size: 16px; font-weight: 600; margin-bottom: 2px; }
+.status-desc { font-size: 13px; font-weight: 300; opacity: 0.8; }
+
+/* ── CHARTS ─────── */
+.charts-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+  margin-bottom: 32px;
+}
+@media(max-width:700px){ .charts-row{ grid-template-columns:1fr; } }
+
+.chart-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 20px;
+}
+
+.chart-title {
+  font-size: 11px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--muted2);
+  margin-bottom: 16px;
+  font-weight: 500;
+}
+
+.chart-wrap { position: relative; height: 170px; }
+
+/* ── FORECAST CARDS ─────── */
+.fc-row {
+  display: grid;
+  grid-template-columns: repeat(3,1fr);
+  gap: 16px;
+  margin-bottom: 32px;
+}
+@media(max-width:600px){ .fc-row{ grid-template-columns:1fr; } }
+
+.fc-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 18px;
+  text-align: center;
+  transition: border-color 0.2s, transform 0.2s;
+}
+.fc-card:hover { transform: translateY(-3px); }
+.fc-card-top { height: 3px; border-radius: 2px; margin: -18px -18px 16px; }
+.fc-time { font-size: 11px; color: var(--muted2); letter-spacing: 1px; margin-bottom: 4px; }
+.fc-val { font-family:'Teko',sans-serif; font-size:48px; font-weight:600; line-height:1; }
+.fc-unit { font-size:11px; color:var(--muted); }
+.fc-badge { display:inline-flex; align-items:center; gap:4px; margin-top:8px; padding:4px 12px; border-radius:6px; font-size:12px; font-weight:500; border:1px solid currentColor; }
+.fc-trend { margin-top:6px; font-size:12px; color:var(--muted2); }
+
+/* ── SCALE TABLE ─────── */
+.scale-wrap {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  overflow: hidden;
+  margin-bottom: 32px;
+}
+
+.scale-wrap table { width:100%; border-collapse:collapse; }
+.scale-wrap th {
+  background: var(--surface2);
+  font-size: 10px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--muted2);
+  padding: 12px 18px;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+  font-weight: 500;
+}
+.scale-wrap td {
+  padding: 13px 18px;
+  font-size: 14px;
+  border-bottom: 1px solid var(--border);
+  font-weight: 300;
+}
+.scale-wrap tr:last-child td { border-bottom: none; }
+.scale-wrap tr.is-current td {
+  background: rgba(251,191,36,0.07);
+  font-weight: 500;
+}
+.current-tag {
+  display: inline-block;
+  font-size: 9px;
+  font-weight: 600;
+  background: var(--c-m);
+  color: #000;
+  padding: 2px 7px;
+  border-radius: 3px;
+  margin-left: 8px;
+  letter-spacing: 1px;
+}
+.dot { width:10px;height:10px;border-radius:50%;display:inline-block;vertical-align:middle;margin-right:8px; }
+
+/* ── GUIDE ─────── */
+.guide-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin-bottom: 32px;
+}
+@media(max-width:600px){ .guide-grid{ grid-template-columns:1fr; } }
+
+.guide-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 20px;
+}
+
+.guide-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--accent);
+  margin-bottom: 14px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border);
+  letter-spacing: 0.5px;
+}
+
+.guide-item { display:flex; gap:10px; margin-bottom:9px; font-size:13px; line-height:1.6; font-weight:300; }
+
+.gnum {
+  flex-shrink: 0;
+  width: 22px; height: 22px;
+  background: var(--accent-dim);
+  border: 1px solid rgba(0,212,255,0.2);
+  color: var(--accent);
+  border-radius: 50%;
+  font-size: 11px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 2px;
+}
+
+/* ── SOCIAL ─────── */
+.social-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 22px;
+  margin-bottom: 32px;
+}
+
+.social-label {
+  font-size: 10px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--muted2);
+  margin-bottom: 14px;
+  font-weight: 500;
+}
+
+.social-text {
+  background: rgba(0,0,0,0.3);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px;
+  font-size: 13px;
+  line-height: 1.9;
+  white-space: pre-line;
+  color: var(--muted2);
+  font-weight: 300;
+}
+
+.copy-btn {
+  margin-top: 12px;
+  background: var(--accent);
+  border: none;
+  color: #000;
+  padding: 10px 22px;
+  border-radius: 7px;
+  cursor: pointer;
+  font-family: 'Kanit', sans-serif;
+  font-size: 13px;
+  font-weight: 600;
+  transition: all 0.2s;
+  letter-spacing: 0.5px;
+}
+.copy-btn:hover { background: #33ddff; transform: translateY(-1px); }
+
+/* ── COLORS ─────── */
+.clr-verygood    { color: var(--c-vg); }
+.clr-good        { color: var(--c-g);  }
+.clr-moderate    { color: var(--c-m);  }
+.clr-unhealthy-s { color: var(--c-us); }
+.clr-unhealthy   { color: var(--c-u);  }
+
+.bg-verygood    { background: rgba(0,229,160,0.12); }
+.bg-good        { background: rgba(74,222,128,0.12); }
+.bg-moderate    { background: rgba(251,191,36,0.12); }
+.bg-unhealthy-s { background: rgba(249,115,22,0.12); }
+.bg-unhealthy   { background: rgba(255,69,69,0.12); }
+
+/* ── LOADING/ERROR ─────── */
+.loading-box { text-align:center; padding:60px; color:var(--muted2); }
+.spinner {
+  width:36px; height:36px;
+  border:2px solid var(--border);
+  border-top-color:var(--accent);
+  border-radius:50%;
+  animation:spin .8s linear infinite;
+  margin:0 auto 14px;
+}
+.error-box {
+  background: rgba(255,69,69,0.08);
+  border: 1px solid rgba(255,69,69,0.3);
+  border-radius: 10px;
+  padding: 16px 20px;
+  color: var(--c-u);
+  font-size: 14px;
+  margin-bottom: 20px;
+}
+
+/* ── FOOTER ─────── */
+footer {
+  position: relative;
+  z-index: 10;
+  background: rgba(0,0,0,0.5);
+  border-top: 1px solid var(--border);
+  padding: 18px 24px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--muted);
+  font-weight: 300;
+}
+footer strong { color: var(--muted2); font-weight: 500; }
+
+@keyframes spin { to { transform:rotate(360deg); } }
+@keyframes cardIn {
+  from { opacity:0; transform:translateY(16px); }
+  to   { opacity:1; transform:translateY(0); }
+}
+</style>
+</head>
+<body>
+
+<!-- ── CRITICAL ALERT (>75.1) ─────── -->
+<div id="criticalAlert">
+  <div class="alert-frame">
+    <div class="alert-inner">
+      <div class="alert-pulse-icon">☣️</div>
+      <div class="alert-text-block">
+        <div class="alert-title-big">⚠ อันตรายต่อสุขภาพ — PM 2.5 เกิน 75.1 µg/m³</div>
+        <div class="alert-subtitle">หลีกเลี่ยงกิจกรรมกลางแจ้งทุกชนิด • สวม N95 ตลอดเวลา • กลุ่มเสี่ยงอยู่ในอาคารเท่านั้น</div>
+        <div class="alert-locations" id="alertLocations"></div>
+      </div>
+      <button class="alert-close-btn" onclick="document.getElementById('criticalAlert').classList.remove('show')">✕ ปิด</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── TOPBAR ─────── -->
+<div class="topbar">
+  <span><strong>🏥 โรงพยาบาลชาติตระการ</strong> · งานอาชีวอนามัยและความปลอดภัย</span>
+  <span>📡 Real-Time จาก GISTDA · อัปเดตทุก 30 นาที</span>
+</div>
+
+<!-- ── AQI STATUS BAR ─────── -->
+<div id="aqiBar">
+  <div class="aqi-bar-stripe" id="aqiBarStripe"></div>
+  <div class="aqi-bar-content" id="aqiBarContent"></div>
+</div>
+
+<!-- ── HEADER ─────── -->
+<header>
+  <div class="header-inner">
+    <div>
+      <div class="header-badge">
+        <span>●</span> PM 2.5 MONITORING SYSTEM
+      </div>
+      <h1>อำเภอ<span>ชาติตระการ</span></h1>
+      <div class="header-sub">จังหวัดพิษณุโลก · ครอบคลุม 6 ตำบล · ข้อมูลดาวเทียม GISTDA</div>
+    </div>
+    <div class="header-right">
+      <div class="live-pill">
+        <div class="live-dot"></div>
+        <span id="statusText">กำลังโหลด...</span>
+      </div>
+      <div class="updated-text" id="updatedText">—</div>
+      <button class="refresh-btn" id="refreshBtn" onclick="loadAll()">↻ รีเฟรช</button>
+    </div>
+  </div>
+</header>
+
+<!-- ── MAIN ─────── -->
+<main>
+  <div id="app">
+    <div class="loading-box">
+      <div class="spinner"></div>
+      <p>กำลังดึงข้อมูล PM 2.5 ทั้ง 6 ตำบลจาก GISTDA...</p>
+    </div>
+  </div>
+</main>
+
+<footer>
+  <strong>งานอาชีวอนามัยและความปลอดภัย โรงพยาบาลชาติตระการ</strong> ·
+  ข้อมูลจาก GISTDA / ระบบดาวเทียม · กระทรวงสาธารณสุข
+</footer>
+
+<script>
+// ── CONFIG ─────────────────────────────────────────────
+const TAMBONS = [
+  { name:'ต.ชาติตระการ', lat:17.278, lng:100.598 },
+  { name:'ต.บ้านดง',     lat:17.151, lng:100.512 },
+  { name:'ต.บ่อภาค',     lat:17.482, lng:100.777 },
+  { name:'ต.ท่าสะแก',    lat:17.218, lng:100.654 },
+  { name:'ต.สวนเมี่ยง',  lat:17.094, lng:100.574 },
+  { name:'ต.ป่าแดง',     lat:17.273, lng:100.602 },
+];
+
+const API_BASE     = 'https://pm25.gistda.or.th/rest/getPm25byLocation';
+const API_FORECAST = 'https://pm25.gistda.or.th/rest/pred/getPm25byLocation';
+const REFRESH_MS   = 30 * 60 * 1000;
+const ALERT_THRESHOLD = 75.1;
+
+const LEVELS = [
+  {key:'verygood',    th:'คุณภาพดีมาก',        min:0,    max:15,   emoji:'🟢', warn:'ปลอดภัยสำหรับทุกคน ทำกิจกรรมกลางแจ้งได้ตามปกติ'},
+  {key:'good',        th:'คุณภาพดี',            min:15.1, max:25,   emoji:'🟢', warn:'คุณภาพอากาศดี ทำกิจกรรมได้ตามปกติ'},
+  {key:'moderate',    th:'ปานกลาง',             min:25.1, max:37.5, emoji:'🟡', warn:'กลุ่มเสี่ยงควรลดกิจกรรมกลางแจ้งและสวมหน้ากาก N95'},
+  {key:'unhealthy-s', th:'เริ่มมีผลต่อสุขภาพ', min:37.6, max:75,   emoji:'🟠', warn:'ทุกคนควรสวมหน้ากาก N95 และลดเวลาอยู่กลางแจ้ง'},
+  {key:'unhealthy',   th:'มีผลต่อสุขภาพ',       min:75.1, max:9999, emoji:'🔴', warn:'หลีกเลี่ยงออกนอกบ้าน หากจำเป็นต้องสวม N95 ตลอดเวลา'},
+];
+
+const CLR = {
+  verygood:'#00e5a0', good:'#4ade80', moderate:'#fbbf24',
+  'unhealthy-s':'#f97316', unhealthy:'#ff4545'
+};
+
+const GLOW = {
+  verygood:'rgba(0,229,160,0.1)', good:'rgba(74,222,128,0.1)',
+  moderate:'rgba(251,191,36,0.1)', 'unhealthy-s':'rgba(249,115,22,0.1)',
+  unhealthy:'rgba(255,69,69,0.15)'
+};
+
+function getLevel(v){ return LEVELS.find(l=>v>=l.min&&v<=l.max)||LEVELS[2]; }
+function fmt(v){ return parseFloat(v).toFixed(1); }
+function toThaiTime(iso){
+  return new Date(iso).toLocaleString('th-TH',{hour:'2-digit',minute:'2-digit',timeZone:'Asia/Bangkok'});
+}
+
+let chartH=null, chartF=null;
+
+// ── FETCH ─────────────────────────────────────────────
+async function loadAll(){
+  const btn=document.getElementById('refreshBtn');
+  btn.disabled=true; btn.textContent='⏳ กำลังโหลด...';
+  document.getElementById('statusText').textContent='กำลังโหลด...';
+
+  try {
+    const t='&_t='+Date.now();
+    const refTambon=TAMBONS.find(tb=>tb.name==='ต.ป่าแดง');
+    const [forecastRes,...tambonResults]=await Promise.all([
+      fetch(`${API_FORECAST}?lat=${refTambon.lat}&lng=${refTambon.lng}${t}`).then(r=>r.json()),
+      ...TAMBONS.map(tb=>
+        fetch(`${API_BASE}?lat=${tb.lat}&lng=${tb.lng}${t}`)
+          .then(r=>r.json())
+          .then(d=>({tambon:tb.name,data:d.data}))
+          .catch(()=>({tambon:tb.name,data:null}))
+      )
+    ]);
+    render(tambonResults,forecastRes.data);
+    document.getElementById('statusText').textContent='LIVE';
+    document.getElementById('updatedText').textContent=
+      'อัปเดต '+new Date().toLocaleString('th-TH',{timeZone:'Asia/Bangkok'});
+  } catch(e){
+    document.getElementById('app').innerHTML=
+      `<div class="error-box">⚠️ ไม่สามารถดึงข้อมูลได้: ${e.message}<br><small>ตรวจสอบการเชื่อมต่อแล้วลองรีเฟรชใหม่</small></div>`;
+    document.getElementById('statusText').textContent='เชื่อมต่อไม่ได้';
+  } finally {
+    btn.disabled=false; btn.textContent='↻ รีเฟรช';
+  }
+}
+
+// ── AQI STATUS BAR ─────────────────────────────────
+const AQI_BG = {
+  verygood:    'rgba(0,229,160,0.08)',
+  good:        'rgba(74,222,128,0.08)',
+  moderate:    'rgba(251,191,36,0.1)',
+  'unhealthy-s':'rgba(249,115,22,0.12)',
+  unhealthy:   'rgba(255,69,69,0.15)',
+};
+
+function updateAqiBar(districtAvg, lv, dateTH, timeTH) {
+  const bar = document.getElementById('aqiBar');
+  const stripe = document.getElementById('aqiBarStripe');
+  const content = document.getElementById('aqiBarContent');
+  const color = CLR[lv.key];
+
+  stripe.style.background = color;
+  bar.style.background = AQI_BG[lv.key];
+  content.innerHTML = `
+    <div class="aqi-bar-left">
+      <div class="aqi-bar-dot" style="background:${color};box-shadow:0 0 8px ${color};"></div>
+      <span class="aqi-bar-level" style="color:${color};">${lv.emoji} ภาพรวมอำเภอ: ${lv.th}</span>
+      <span class="aqi-bar-msg" style="color:${color}cc;">${lv.warn} · ${dateTH} ${timeTH}</span>
+    </div>
+    <div class="aqi-bar-avg" style="color:${color};">ค่าเฉลี่ย ${fmt(districtAvg)} <span style="font-size:13px;font-weight:300;opacity:0.7;">µg/m³</span></div>
+  `;
+  bar.classList.add('show');
+}
+
+// ── CRITICAL ALERT CHECK ─────────────────────────────
+function checkCriticalAlert(sorted){
+  const dangerous = sorted.filter(r=>r.data&&r.data.pm25>=ALERT_THRESHOLD);
+  const el = document.getElementById('criticalAlert');
+  const locsEl = document.getElementById('alertLocations');
+  if(dangerous.length>0){
+    locsEl.innerHTML = dangerous.map(r=>
+      `<span class="alert-loc-tag">${r.tambon} · ${fmt(r.data.pm25)} µg/m³</span>`
+    ).join('');
+    el.classList.add('show');
+    // Push content down
+    document.querySelector('main').style.paddingTop = '28px';
+  } else {
+    el.classList.remove('show');
+  }
+}
+
+// ── RENDER ─────────────────────────────────────────────
+function render(tambonResults, forecastData){
+  const valid=tambonResults.filter(r=>r.data);
+  const ref=valid.find(r=>r.tambon==='ต.ป่าแดง')||valid[0];
+  const refData=ref.data;
+  const dateTH=refData.datetimeThai.dateThai;
+  const timeTH=refData.datetimeThai.timeThai;
+
+  const vals=valid.map(r=>r.data.pm25);
+  const avgVals=valid.map(r=>r.data.pm25Avg24hrs);
+  const districtAvg=vals.reduce((a,b)=>a+b,0)/vals.length;
+  const maxVal=Math.max(...vals);
+  const minVal=Math.min(...vals);
+
+  const sorted=[...valid].sort((a,b)=>b.data.pm25-a.data.pm25);
+  const districtLv=getLevel(districtAvg);
+  const forecasts=forecastData.graphPredictByHrs;
+  const history=refData.graphHistory24hrs;
+
+  // Critical alert check
+  checkCriticalAlert(sorted);
+
+  // AQI status bar
+  updateAqiBar(districtAvg, districtLv, dateTH, timeTH);
+
+  // Social text
+  const tbLines=sorted.map(r=>`  ${r.tambon.replace('ต.','')} ${fmt(r.data.pm25)} µg/m³ (${getLevel(r.data.pm25).th})`).join('\n');
+  const fcLines=forecasts.map(f=>`  ${toThaiTime(f[1])} น. → ${fmt(f[0])} µg/m³ (${getLevel(f[0]).th})`).join('\n');
+  const socialText=`🚨 แจ้งเตือนคุณภาพอากาศ | อำเภอชาติตระการ
+${dateTH} ${timeTH}
+
+📊 ค่า PM 2.5 รายตำบล:
+${tbLines}
+
+🏘️ ค่าเฉลี่ยอำเภอ: ${fmt(districtAvg)} µg/m³ (${districtLv.th})
+
+🔮 พยากรณ์ 3 ชั่วโมงข้างหน้า:
+${fcLines}
+
+${districtLv.emoji} ${districtLv.warn}
+
+✅ คำแนะนำ:
+1️⃣ สวมหน้ากาก N95 ทุกครั้งที่ออกนอกบ้าน
+2️⃣ กลุ่มเสี่ยง (ผู้สูงอายุ เด็ก ผู้ป่วย หญิงตั้งครรภ์) ลดกิจกรรมกลางแจ้ง
+3️⃣ ปิดประตูหน้าต่าง งดการเผาทุกชนิด
+
+🏥 งานอาชีวอนามัย รพ.ชาติตระการ | แหล่งข้อมูล: GISTDA`;
+
+  document.getElementById('app').innerHTML=`
+
+    <!-- SUMMARY -->
+    <div class="summary-row">
+      <div class="s-card" style="--card-color:${CLR[districtLv.key]};">
+        <div class="s-icon">📊</div>
+        <div class="s-label">ค่าเฉลี่ยอำเภอ</div>
+        <div class="s-value">${fmt(districtAvg)}</div>
+        <div class="s-sub">µg/m³ · ทุกตำบล</div>
+      </div>
+      <div class="s-card" style="--card-color:${CLR[getLevel(maxVal).key]};">
+        <div class="s-icon">🔺</div>
+        <div class="s-label">สูงสุด · ${sorted[0].tambon}</div>
+        <div class="s-value">${fmt(maxVal)}</div>
+        <div class="s-sub">µg/m³ · สูงสุดในอำเภอ</div>
+      </div>
+      <div class="s-card" style="--card-color:${CLR[getLevel(minVal).key]};">
+        <div class="s-icon">🔻</div>
+        <div class="s-label">ต่ำสุด · ${sorted[sorted.length-1].tambon}</div>
+        <div class="s-value">${fmt(minVal)}</div>
+        <div class="s-sub">µg/m³ · ต่ำสุดในอำเภอ</div>
+      </div>
+      <div class="s-card" style="--card-color:${CLR[getLevel(forecasts[0][0]).key]};">
+        <div class="s-icon">🔮</div>
+        <div class="s-label">พยากรณ์ชั่วโมงหน้า</div>
+        <div class="s-value clr-${getLevel(forecasts[0][0]).key}">${fmt(forecasts[0][0])}</div>
+        <div class="s-sub">µg/m³ · ${toThaiTime(forecasts[0][1])}</div>
+      </div>
+    </div>
+
+    <!-- TAMBON CARDS -->
+    <div class="section-head">ค่า PM 2.5 รายตำบล (เรียงจากมากไปน้อย)</div>
+    <div class="tambon-grid">
+      ${sorted.map((r,i)=>{
+        const v=r.data.pm25;
+        const avg=r.data.pm25Avg24hrs;
+        const lv=getLevel(v);
+        const bw=((v/Math.max(maxVal,1))*100).toFixed(0);
+        return `
+        <div class="tb-card" style="animation:cardIn .5s ${i*0.08}s ease both; border-color:${v>=ALERT_THRESHOLD?'rgba(255,69,69,0.3)':''}"
+          ${v>=ALERT_THRESHOLD?`style="animation:cardIn .5s ${i*0.08}s ease both; border-color:rgba(255,69,69,0.3); box-shadow:0 0 20px rgba(255,69,69,0.1);"`:''}>
+          <div class="tb-top-bar" style="background:${CLR[lv.key]};"></div>
+          <div class="tb-card-glow" style="--glow-color:${GLOW[lv.key]};"></div>
+          ${i===0?`<span class="tb-rank-badge bg-unhealthy-s clr-unhealthy-s" style="background:rgba(249,115,22,0.15);color:#f97316;border:1px solid rgba(249,115,22,0.3);">🔺 สูงสุด</span>`:''}
+          ${i===sorted.length-1?`<span class="tb-rank-badge" style="background:rgba(74,222,128,0.12);color:#4ade80;border:1px solid rgba(74,222,128,0.3);">🔻 ต่ำสุด</span>`:''}
+          ${v>=ALERT_THRESHOLD?`<span class="tb-rank-badge" style="background:rgba(255,69,69,0.15);color:#ff4545;border:1px solid rgba(255,69,69,0.3);top:12px;right:12px;">☣️ อันตราย</span>`:''}
+          <div class="tb-name"><strong>${r.tambon}</strong></div>
+          <div class="tb-value-row">
+            <div class="tb-val clr-${lv.key}">${fmt(v)}</div>
+            <div class="tb-unit">µg/m³</div>
+          </div>
+          <div class="tb-avg">เฉลี่ย 24 ชม. <span class="clr-${getLevel(avg).key}">${fmt(avg)}</span> µg/m³</div>
+          <span class="tb-badge bg-${lv.key} clr-${lv.key}">${lv.emoji} ${lv.th}</span>
+          <div class="tb-bar"><div class="tb-bar-fill" style="width:${bw}%;background:${CLR[lv.key]};"></div></div>
+        </div>`;
+      }).join('')}
+    </div>
+
+    <!-- CHARTS -->
+    <div class="section-head">กราฟย้อนหลังและพยากรณ์ (อ้างอิง ต.ป่าแดง)</div>
+    <div class="charts-row">
+      <div class="chart-card">
+        <div class="chart-title">📈 ค่า PM 2.5 ย้อนหลัง 24 ชั่วโมง</div>
+        <div class="chart-wrap"><canvas id="chartHistory"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <div class="chart-title">🔮 พยากรณ์ล่วงหน้า 3 ชั่วโมง</div>
+        <div class="chart-wrap"><canvas id="chartForecast"></canvas></div>
+      </div>
+    </div>
+
+    <!-- FORECAST CARDS -->
+    <div class="fc-row">
+      ${forecasts.map((f,i)=>{
+        const flv=getLevel(f[0]);
+        const prev=i===0?districtAvg:forecasts[i-1][0];
+        const diff=f[0]-prev;
+        const trend=diff>2?`<span style="color:#ff4545">▲ แนวโน้มสูงขึ้น</span>`:
+                    diff<-2?`<span style="color:#4ade80">▼ แนวโน้มลดลง</span>`:
+                    `<span style="color:var(--muted2)">→ ทรงตัว</span>`;
+        return `<div class="fc-card">
+          <div class="fc-card-top" style="background:${CLR[flv.key]};"></div>
+          <div class="fc-time">⏰ ${toThaiTime(f[1])} น.</div>
+          <div class="fc-val clr-${flv.key}">${fmt(f[0])}</div>
+          <div class="fc-unit">µg/m³</div>
+          <div><span class="fc-badge bg-${flv.key} clr-${flv.key}">${flv.emoji} ${flv.th}</span></div>
+          <div class="fc-trend">${trend}</div>
+        </div>`;
+      }).join('')}
+    </div>
+
+    <!-- SCALE TABLE -->
+    <div class="section-head">เกณฑ์ระดับคุณภาพอากาศมาตรฐาน</div>
+    <div class="scale-wrap">
+      <table>
+        <thead><tr><th>ระดับ</th><th>ค่า PM 2.5 (µg/m³)</th><th>คำแนะนำ</th></tr></thead>
+        <tbody>
+          ${LEVELS.map(l=>{
+            const isCur=districtLv.key===l.key;
+            return `<tr class="${isCur?'is-current':''}">
+              <td><span class="dot" style="background:${CLR[l.key]};box-shadow:0 0 6px ${CLR[l.key]}44;"></span>
+                <strong class="clr-${l.key}">${l.th}</strong>
+                ${isCur?'<span class="current-tag">ปัจจุบัน</span>':''}
+              </td>
+              <td style="font-family:'Teko',sans-serif;font-size:18px;color:${CLR[l.key]};">
+                ${l.max>=9999?'> 75.1':l.min+' – '+l.max}
+              </td>
+              <td style="font-size:13px;font-weight:300;">${l.warn}</td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table>
+    </div>
+
+    <!-- GUIDE -->
+    <div class="section-head">คำแนะนำปฏิบัติตัว</div>
+    <div class="guide-grid">
+      <div class="guide-card">
+        <div class="guide-title">🏠 ประชาชนทั่วไป</div>
+        ${['สวมหน้ากาก <strong>N95</strong> ทุกครั้งที่ออกนอกบ้าน (หน้ากากผ้าไม่กรอง PM 2.5)',
+           'ปิดประตูหน้าต่างให้สนิท ใช้เครื่องฟอกอากาศหากมี',
+           'ดื่มน้ำสะอาดให้เพียงพออย่างน้อยวันละ 8 แก้ว',
+           'หลีกเลี่ยงออกกำลังกายกลางแจ้ง โดยเฉพาะ 07:00–10:00 น.',
+           '<strong>งดการเผา</strong>ทุกชนิดในพื้นที่โล่งแจ้ง']
+          .map((t,i)=>`<div class="guide-item"><div class="gnum">${i+1}</div><div>${t}</div></div>`).join('')}
+      </div>
+      <div class="guide-card">
+        <div class="guide-title">🧑‍🌾 ผู้ทำงานกลางแจ้ง / กิจกรรมบุญ</div>
+        ${['สวมหน้ากาก <strong>N95</strong> ตลอดเวลาที่อยู่กลางแจ้ง',
+           'ลดระยะเวลากิจกรรมกลางแจ้งให้สั้นที่สุด',
+           'พักในพื้นที่ร่มหรืออาคารปิดระหว่างกิจกรรม',
+           'กลุ่มเสี่ยง (ผู้สูงอายุ เด็ก ผู้ป่วย หญิงตั้งครรภ์) ควรงดกิจกรรม',
+           'มีอาการ เวียนศีรษะ หายใจลำบาก แน่นหน้าอก <strong style="color:var(--c-u)">รีบพบแพทย์ทันที</strong>']
+          .map((t,i)=>`<div class="guide-item"><div class="gnum">${i+1}</div><div>${t}</div></div>`).join('')}
+      </div>
+    </div>
+
+    <!-- SOCIAL -->
+    <div class="section-head">ข้อความแจ้งเตือนโซเชียลมีเดีย</div>
+    <div class="social-card">
+      <div class="social-label">📢 สร้างจากข้อมูล Real-Time ทุกตำบล · กด Copy โพสต์ได้เลย</div>
+      <div class="social-text" id="socialText">${socialText}</div>
+      <button class="copy-btn" onclick="copyText()">📋 คัดลอกข้อความ</button>
+    </div>
+  `;
+
+  setTimeout(()=>{ drawHistory(history); drawForecast(districtAvg,forecasts); },50);
+}
+
+// ── CHARTS ─────────────────────────────────────────────
+function drawHistory(graph){
+  const ctx=document.getElementById('chartHistory'); if(!ctx)return;
+  if(chartH){chartH.destroy();chartH=null;}
+  const labels=graph.map(g=>toThaiTime(g[1]));
+  const values=graph.map(g=>parseFloat(g[0].toFixed(1)));
+  chartH=new Chart(ctx,{
+    type:'line',
+    data:{labels,datasets:[{
+      label:'PM 2.5',data:values,
+      borderColor:'#00d4ff',
+      backgroundColor:'rgba(0,212,255,0.05)',
+      borderWidth:2,pointRadius:2,tension:0.4,fill:true,
+      pointBackgroundColor:values.map(v=>CLR[getLevel(v).key]),
+    }]},
+    options:{responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{display:false},
+        tooltip:{callbacks:{label:c=>` ${c.parsed.y} µg/m³ (${getLevel(c.parsed.y).th})`},
+          backgroundColor:'rgba(6,13,24,0.9)',borderColor:'rgba(0,212,255,0.2)',borderWidth:1}},
+      scales:{
+        x:{ticks:{font:{size:10,family:'Kanit'},maxRotation:45,color:'#4a6080'},
+           grid:{color:'rgba(255,255,255,0.03)'}},
+        y:{ticks:{font:{size:11,family:'Kanit'},color:'#4a6080'},
+           grid:{color:'rgba(255,255,255,0.04)'},
+           title:{display:true,text:'µg/m³',font:{size:11},color:'#4a6080'}}
+      }}
+  });
+}
+
+function drawForecast(curVal,forecasts){
+  const ctx=document.getElementById('chartForecast'); if(!ctx)return;
+  if(chartF){chartF.destroy();chartF=null;}
+  const labels=['ปัจจุบัน',...forecasts.map(f=>toThaiTime(f[1]))];
+  const values=[parseFloat(curVal.toFixed(1)),...forecasts.map(f=>parseFloat(f[0].toFixed(1)))];
+  const colors=values.map(v=>CLR[getLevel(v).key]);
+
+  // Alert threshold annotation plugin
+  const alertLinePlugin = {
+    id:'alertLine',
+    afterDraw(chart){
+      const {ctx,chartArea:{left,right},scales:{y}}=chart;
+      const yPos=y.getPixelForValue(ALERT_THRESHOLD);
+      ctx.save();
+      ctx.beginPath();
+      ctx.setLineDash([6,4]);
+      ctx.strokeStyle='rgba(255,69,69,0.7)';
+      ctx.lineWidth=1.5;
+      ctx.moveTo(left,yPos);
+      ctx.lineTo(right,yPos);
+      ctx.stroke();
+      ctx.fillStyle='rgba(255,69,69,0.7)';
+      ctx.font='10px Kanit';
+      ctx.fillText(`⚠ ${ALERT_THRESHOLD}`,right-52,yPos-4);
+      ctx.restore();
+    }
+  };
+
+  chartF=new Chart(ctx,{
+    type:'bar',
+    plugins:[alertLinePlugin],
+    data:{labels,datasets:[{
+      label:'พยากรณ์',data:values,
+      backgroundColor:colors.map(c=>c+'22'),
+      borderColor:colors,borderWidth:2,borderRadius:6,
+    }]},
+    options:{responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{display:false},
+        tooltip:{callbacks:{label:c=>` ${c.parsed.y} µg/m³ (${getLevel(c.parsed.y).th})`},
+          backgroundColor:'rgba(6,13,24,0.9)',borderColor:'rgba(0,212,255,0.2)',borderWidth:1}},
+      scales:{
+        x:{ticks:{font:{size:11,family:'Kanit'},color:'#4a6080'},grid:{display:false}},
+        y:{ticks:{font:{size:11,family:'Kanit'},color:'#4a6080'},
+           grid:{color:'rgba(255,255,255,0.04)'},
+           title:{display:true,text:'µg/m³',font:{size:11},color:'#4a6080'}}
+      }}
+  });
+}
+
+function copyText(){
+  const text=document.getElementById('socialText').innerText;
+  navigator.clipboard.writeText(text).then(()=>{
+    const btn=document.querySelector('.copy-btn');
+    btn.textContent='✅ คัดลอกแล้ว!';
+    setTimeout(()=>btn.textContent='📋 คัดลอกข้อความ',2500);
+  });
+}
+
+// ── START ─────────────────────────────────────────────
+loadAll();
+setInterval(loadAll,REFRESH_MS);
+</script>
+</body>
+</html>
